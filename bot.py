@@ -144,7 +144,7 @@ async def handle_cards(message: types.Message, state: FSMContext):
         results = await asyncio.gather(*tasks)
 
     await state.clear()
-    await state.update_data(booking_uuid=booking_uuid)  # Aynı UUID'yi tekrar kullanabilmek için saklıyoruz
+    await state.update_data(booking_uuid=booking_uuid)
     
     chunk = ""
     for res in results:
