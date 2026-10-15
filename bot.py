@@ -97,12 +97,14 @@ async def process_single(session, booking_uuid, proxy_url, satir):
 
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message, state: FSMContext):
+    logging.info("/start komutu alındı, state temizleniyor.")
     await state.clear()
     await state.set_state(CheckerState.waiting_for_uuid)
     await message.answer("🤖 **Etstur Puan Checker Bot**\n\nAdım 1/2: Lütfen kullanmak istediğiniz **Booking UUID** kodunu gönderin:")
 
 @dp.message(CheckerState.waiting_for_uuid)
 async def handle_uuid(message: types.Message, state: FSMContext):
+    logging.info(f"handle_uuid tetiklendi. Gelen metin: {message.text}")
     uuid_input = message.text.strip()
     if len(uuid_input) < 10:
         await message.answer("⚠️ Geçersiz UUID! Lütfen geçerli bir Booking UUID gönderin:")
@@ -110,10 +112,12 @@ async def handle_uuid(message: types.Message, state: FSMContext):
 
     await state.update_data(booking_uuid=uuid_input)
     await state.set_state(CheckerState.waiting_for_proxy)
+    logging.info("State başarıyla waiting_for_proxy yapıldı. Proxy isteniyor.")
     await message.answer("✅ **UUID Kaydedildi.**\n\nAdım 2/2: Kullanmak istediğiniz **Proxy adresini** gönderin (Örnek: `http://IP:PORT` veya kullanmıyorsanız direkt `yok` yazın):")
 
 @dp.message(CheckerState.waiting_for_proxy)
 async def handle_proxy(message: types.Message, state: FSMContext):
+    logging.info(f"handle_proxy tetiklendi! Gelen proxy: {message.text}")
     proxy_input = message.text.strip()
     
     if proxy_input.lower() == "yok":
