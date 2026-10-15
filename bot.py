@@ -46,7 +46,6 @@ async def puan_sorgula(session, booking_uuid, proxy_url, kart_no, ay, yil):
     }
 
     try:
-        # aiohttp ile proxy kullanarak istek atıyoruz
         async with session.post(
             "https://www.etstur.com/services/api/hotel/payment/get-credit-card-point",
             headers=h, json=data, proxy=proxy_url, timeout=aiohttp.ClientTimeout(total=10)
@@ -109,8 +108,9 @@ async def handle_uuid(message: types.Message, state: FSMContext):
         return
 
     await state.update_data(booking_uuid=uuid_input)
+    # DÜZELTME BURADA: UUID alındıktan sonra artık proxy adımına geçiyor!
     await state.set_state(CheckerState.waiting_for_proxy)
-    await message.answer("✅ **UUID Kaydedildi.**\n\nAdım 2/2: Kullanmak istediğiniz **Proxy adresini** gönderin (Örnek: `http://IP:PORT` veya proxy kullanmıyorsanız direkt `yok` yazın):")
+    await message.answer("✅ **UUID Kaydedildi.**\n\nAdım 2/2: Kullanmak istediğiniz **Proxy adresini** gönderin (Örnek: `http://IP:PORT` veya kullanmıyorsanız direkt `yok` yazın):")
 
 @dp.message(CheckerState.waiting_for_proxy)
 async def handle_proxy(message: types.Message, state: FSMContext):
@@ -119,7 +119,6 @@ async def handle_proxy(message: types.Message, state: FSMContext):
     if proxy_input.lower() == "yok":
         proxy_val = None
     else:
-        # Eğer kullanıcı sadece IP:PORT yazdıysa başına otomatik http:// ekleyelim ki hata vermesin
         if not proxy_input.startswith("http://") and not proxy_input.startswith("socks"):
             proxy_val = f"http://{proxy_input}"
         else:
