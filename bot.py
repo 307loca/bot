@@ -97,6 +97,7 @@ async def process_single(session, booking_uuid, proxy_url, satir):
 
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message, state: FSMContext):
+    await state.clear()
     await state.set_state(CheckerState.waiting_for_uuid)
     await message.answer("🤖 **Etstur Puan Checker Bot**\n\nAdım 1/2: Lütfen kullanmak istediğiniz **Booking UUID** kodunu gönderin:")
 
@@ -108,7 +109,6 @@ async def handle_uuid(message: types.Message, state: FSMContext):
         return
 
     await state.update_data(booking_uuid=uuid_input)
-    # DÜZELTME BURADA: UUID alındıktan sonra artık proxy adımına geçiyor!
     await state.set_state(CheckerState.waiting_for_proxy)
     await message.answer("✅ **UUID Kaydedildi.**\n\nAdım 2/2: Kullanmak istediğiniz **Proxy adresini** gönderin (Örnek: `http://IP:PORT` veya kullanmıyorsanız direkt `yok` yazın):")
 
